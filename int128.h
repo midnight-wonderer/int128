@@ -4,15 +4,19 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#ifdef __cplusplus
+#include <type_traits>
+#endif
+
 #define INT128_MAX \
 	((int128){ .low = UINT64_MAX, .high = UINT64_C(0x7fffffffffffffff) })
 #define INT128_MIN ((int128){ .low = 0, .high = UINT64_C(0x8000000000000000) })
 #define UINT128_MAX ((uint128){ .low = UINT64_MAX, .high = UINT64_MAX })
 
-#define UINT128_C(x) ((uint128){ .low = (x) })
+#define UINT128_C(x) ((uint128){ .low = (uint64_t)(x), .high = 0 })
 #define INT128_C(x)                                                 \
-	(((x) < 0) ? (int128){ .low = (x), .high = UINT64_C(~0) } : \
-		     (int128){ .low = (x) })
+	(((x) < 0) ? (int128){ .low = (uint64_t)(x), .high = UINT64_MAX } : \
+		     (int128){ .low = (uint64_t)(x), .high = 0 })
 
 struct int128 {
 	uint64_t low;
@@ -50,49 +54,21 @@ static inline bool uint128_greater(uint128 lhs, uint128 rhs)
 // Returns lhs < rhs.
 static inline bool int128_less(int128 lhs, int128 rhs)
 {
-	union {
-		uint64_t u;
-		int64_t i;
-	} cvt;
-	union {
-		uint64_t u;
-		int64_t i;
-	} cvt2;
-
-	cvt.u = lhs.high;
-	cvt2.u = rhs.high;
-
-	if (cvt.i == cvt2.i) {
-		cvt.u = lhs.low;
-		cvt2.u = rhs.low;
-		return cvt.i < cvt2.i;
+	if ((int64_t)lhs.high == (int64_t)rhs.high) {
+		return lhs.low < rhs.low;
 	}
 
-	return cvt.i < cvt2.i;
+	return (int64_t)lhs.high < (int64_t)rhs.high;
 }
 
 // Returns lhs > rhs.
 static inline bool int128_greater(int128 lhs, int128 rhs)
 {
-	union {
-		uint64_t u;
-		int64_t i;
-	} cvt;
-	union {
-		uint64_t u;
-		int64_t i;
-	} cvt2;
-
-	cvt.u = lhs.high;
-	cvt2.u = rhs.high;
-
-	if (cvt.i == cvt2.i) {
-		cvt.u = lhs.low;
-		cvt2.u = rhs.low;
-		return cvt.i > cvt2.i;
+	if ((int64_t)lhs.high == (int64_t)rhs.high) {
+		return lhs.low > rhs.low;
 	}
 
-	return cvt.i > cvt2.i;
+	return (int64_t)lhs.high > (int64_t)rhs.high;
 }
 
 // Returns lhs == rhs.
@@ -132,7 +108,7 @@ static inline bool int128_less_eq(int128 lhs, int128 rhs)
 }
 
 // Adds two int128s, wrapping on overflow.
-static inline int128 int128_add(int128 lhs, int128 rhs)
+static inline int128 int128_wrapping_add(int128 lhs, int128 rhs)
 {
 	int128 result = {
 		.low = lhs.low + rhs.low,
@@ -147,21 +123,33 @@ static inline int128 int128_add(int128 lhs, int128 rhs)
 }
 
 // Adds two uint128s, wrapping on overflow.
-static inline uint128 uint128_add(uint128 lhs, uint128 rhs)
+static inline uint128 uint128_wrapping_add(uint128 lhs, uint128 rhs)
 {
-	int128 a = { lhs.low, lhs.high };
-	int128 b = { rhs.low, rhs.high };
-	int128 tmp = int128_add(a, b);
-	return (uint128){
-		.low = tmp.low,
-		.high = tmp.high,
+	uint128 result = {
+		.low = lhs.low + rhs.low,
+		.high = lhs.high + rhs.high,
+	};
+
+	if (result.low < lhs.low) {
+		result.high += 1;
+	}
+
+	return result;
+}
+
+// Returns -x, wrapping on overflow.
+static inline int128 int128_wrapping_neg(int128 x)
+{
+	return (int128){
+		.low = ~x.low + 1,
+		.high = ~x.high + (x.low == 0),
 	};
 }
 
-// Returns -x.
-static inline int128 int128_neg(int128 x)
+// Returns -x, wrapping on overflow.
+static inline uint128 uint128_wrapping_neg(uint128 x)
 {
-	return (int128){
+	return (uint128){
 		.low = ~x.low + 1,
 		.high = ~x.high + (x.low == 0),
 	};
@@ -240,29 +228,37 @@ static inline uint128 uint128_xor(uint128 lhs, uint128 rhs)
 }
 
 // Returns lhs << rhs.
-static inline int128 int128_shiftl(int128 lhs, int rhs)
+static inline uint128 uint128_wrapping_shl(uint128 lhs, int rhs)
 {
+	rhs &= 127;
+	if (rhs == 0) {
+		return lhs;
+	}
 	if (rhs >= 64) {
-		return (int128){ .low = 0, .high = lhs.low << (rhs - 64) };
+		return (uint128){ .low = 0, .high = lhs.low << (rhs - 64) };
 	}
 
-	return (int128){
+	return (uint128){
 		.low = lhs.low << rhs,
 		.high = (lhs.high << rhs) | (lhs.low >> (64 - rhs)),
 	};
 }
 
 // Returns lhs << rhs.
-static inline uint128 uint128_shiftl(uint128 lhs, int rhs)
+static inline int128 int128_wrapping_shl(int128 lhs, int rhs)
 {
-	int128 a = { .low = lhs.low, .high = lhs.high };
-	int128 result = int128_shiftl(a, rhs);
-	return (uint128){ .low = result.low, .high = result.high };
+	uint128 a = { .low = lhs.low, .high = lhs.high };
+	uint128 result = uint128_wrapping_shl(a, rhs);
+	return (int128){ .low = result.low, .high = result.high };
 }
 
 // Returns lhs >> rhs.
-static inline uint128 uint128_shiftr(uint128 lhs, int rhs)
+static inline uint128 uint128_wrapping_shr(uint128 lhs, int rhs)
 {
+	rhs &= 127;
+	if (rhs == 0) {
+		return lhs;
+	}
 	if (rhs >= 64) {
 		return (uint128){ .low = lhs.high >> (rhs - 64), .high = 0 };
 	}
@@ -276,56 +272,64 @@ static inline uint128 uint128_shiftr(uint128 lhs, int rhs)
 // Returns lhs >> rhs.
 // On signed int128 this is an arithmetic shift, so the sign bit is used for
 // shifted in bits.
-static inline int128 int128_shiftr(int128 lhs, int rhs)
+static inline int128 int128_wrapping_shr(int128 lhs, int rhs)
 {
-	if (int128_greater(lhs, INT128_C(0))) {
+	rhs &= 127;
+	if (rhs == 0) {
+		return lhs;
+	}
+	if ((int64_t)lhs.high >= 0) {
 		uint128 a = { .low = lhs.low, .high = lhs.high };
-		uint128 result = uint128_shiftr(a, rhs);
+		uint128 result = uint128_wrapping_shr(a, rhs);
 		return (int128){ .low = result.low, .high = result.high };
 	}
 
-	if (rhs > 64) {
+	if (rhs >= 64) {
 		return (int128){
-			.low = (lhs.high >> (rhs - 64)) |
-			       (UINT64_C(~0) << (64 - (rhs - 64))),
-			.high = UINT64_C(~0),
-		};
-	} else if (rhs == 64) {
-		return (int128){
-			.low = lhs.high,
-			.high = UINT64_C(~0),
+			.low = (uint64_t)((int64_t)lhs.high >> (rhs - 64)),
+			.high = (uint64_t)((int64_t)lhs.high >> 63),
 		};
 	}
 
 	return (int128){
 		.low = (lhs.low >> rhs) | (lhs.high << (64 - rhs)),
-		.high = (lhs.high >> rhs) | (UINT64_C(~0) << (64 - rhs)),
+		.high = (uint64_t)((int64_t)lhs.high >> rhs),
 	};
 }
 
 // Subtracts two int128s, wrapping on underflow.
-static inline int128 int128_sub(int128 lhs, int128 rhs)
+static inline int128 int128_wrapping_sub(int128 lhs, int128 rhs)
 {
-	return int128_add(lhs, int128_neg(rhs));
+	int128 result = {
+		.low = lhs.low - rhs.low,
+		.high = lhs.high - rhs.high,
+	};
+
+	if (lhs.low < rhs.low) {
+		result.high -= 1;
+	}
+
+	return result;
 }
 
 // Subtracts two uint128s, wrapping on underflow.
-static inline uint128 uint128_sub(uint128 lhs, uint128 rhs)
+static inline uint128 uint128_wrapping_sub(uint128 lhs, uint128 rhs)
 {
-	uint128 result = { lhs.low - rhs.low };
-	uint64_t carry = (((result.low & rhs.low) & 1) + (rhs.low >> 1) +
-			  (result.low >> 1)) >>
-			 63;
+	uint128 result = {
+		.low = lhs.low - rhs.low,
+		.high = lhs.high - rhs.high,
+	};
 
-	result.high = lhs.high - (rhs.high + carry);
+	if (lhs.low < rhs.low) {
+		result.high -= 1;
+	}
+
 	return result;
 }
 
 // Multiply two unsigned 64 bit integers and get the 128 bit result.
 static inline uint128 uint128_mul64(uint64_t lhs, uint64_t rhs)
 {
-	// For a more detailed explanation of this algorithm, see uint128_mul.
-
 	// Split the low 64 bits of lhs and rhs into its high and low 32 bits.
 	uint64_t left_lo32 = lhs & UINT32_MAX;
 	uint64_t left_hi32 = lhs >> 32;
@@ -354,187 +358,129 @@ static inline uint128 uint128_mul64(uint64_t lhs, uint64_t rhs)
 // Multiply two signed 64 bit integers and get the 128 bit result.
 static inline int128 int128_mul64(int64_t lhs, int64_t rhs)
 {
-	union {
-		uint64_t u;
-		int64_t i;
-	} cvt;
-
-	cvt.i = lhs;
-	uint64_t a = cvt.u;
-
-	cvt.i = rhs;
-	uint64_t b = cvt.u;
-
-	uint128 tmp = uint128_mul64(a, b);
+	uint128 tmp = uint128_mul64((uint64_t)lhs, (uint64_t)rhs);
 	int128 result = {
 		.low = tmp.low,
 		.high = tmp.high,
 	};
 
 	if (lhs < 0) {
-		result.high -= rhs;
+		result.high -= (uint64_t)rhs;
 	}
 
 	if (rhs < 0) {
-		result.high -= lhs;
+		result.high -= (uint64_t)lhs;
 	}
 
 	return result;
 }
 
 // Returns lhs * rhs.
-static inline uint128 uint128_mul(uint128 lhs, uint128 rhs)
+static inline uint128 uint128_wrapping_mul(uint128 lhs, uint128 rhs)
 {
-	// We want to compute ab given two 128 bit integers a and b.
-	// Let x = 2^64, a = a1x + a2, b = b1x + b2, where a1 and a2 are the
-	// high and low bits of a respectively, and b1 and b2 are the high and
-	// low bits of b2 respectively.
-
-	// Then we compute the partial 64x64 products:
-	uint128 i = uint128_mul64(lhs.low, rhs.low); // a2b2
-	uint128 j = uint128_mul64(lhs.low, rhs.high); // a2b1
-	uint128 k = uint128_mul64(lhs.high, rhs.low); // a1b2
-	// uint128 l = uint128_mul64(lhs.high, rhs.high); // a1b1
-
-	// l would be necessary if we were to perform the full 256 bit product,
-	// but we're only interested in the 128 bit wrapped result.
-
-	// and combine them into the result like so:
-	//       i1 i2
-	//    j1 j2 00
-	//    k1 k2 00
-	// l1 l2 00 00 +
-	// -----------
-	// ...........
-
-	uint128 tmp = uint128_add( //
-		i, // i1 i2
-		(uint128){ .high = j.low } // j2 00
-	);
-
-	// We simply return the low bits of what would be a 256 bit result,
-	// since we only care about the lower bits.
-	uint128 result = uint128_add( //
-		tmp, //
-		(uint128){ .high = k.low } // k2 00
-	);
-
-	// We would also compute the carry if multiplying into 256 bits, so we
-	// could propagate it to the next additions.
-	// uint64_t carry = (tmp.low < lhs.low) + (result.low < lhs.low);
-
-	return result;
+	uint128 i = uint128_mul64(lhs.low, rhs.low);
+	uint64_t j = lhs.low * rhs.high;
+	uint64_t k = lhs.high * rhs.low;
+	i.high += j + k;
+	return i;
 }
 
 // Returns lhs * rhs.
-static inline int128 int128_mul(int128 lhs, int128 rhs)
+static inline int128 int128_wrapping_mul(int128 lhs, int128 rhs)
 {
-	if (int128_eq(lhs, INT128_C(-1))) {
-		return int128_neg(rhs);
-	}
-
-	if (int128_eq(rhs, INT128_C(-1))) {
-		return int128_neg(lhs);
-	}
-
-	bool result_negative = false;
-	if (int128_less(lhs, INT128_C(0))) {
-		result_negative = !result_negative;
-		lhs = int128_neg(lhs);
-	}
-
-	if (int128_less(rhs, INT128_C(0))) {
-		result_negative = !result_negative;
-		rhs = int128_neg(rhs);
-	}
-
 	uint128 a = { .low = lhs.low, .high = lhs.high };
 	uint128 b = { .low = rhs.low, .high = rhs.high };
-	uint128 tmp = uint128_mul(a, b);
-	int128 result = { .low = tmp.low, .high = tmp.high };
-	if (result_negative) {
-		result = int128_neg(result);
-	}
-
-	return result;
+	uint128 tmp = uint128_wrapping_mul(a, b);
+	return (int128){ .low = tmp.low, .high = tmp.high };
 }
 
-// Returns lhs / rhs.
-static inline uint128 uint128_div(uint128 lhs, uint128 rhs)
+static inline int uint64_clz(uint64_t val)
 {
-	// Based on the algorithm described here:
-	// https://stackoverflow.com/questions/5386377/division-without-using
+#if defined(__GNUC__) || defined(__clang__)
+	if (val == 0) return 64;
+	return __builtin_clzll(val);
+#else
+	if (val == 0) return 64;
+	int n = 0;
+	if ((val & UINT64_C(0xFFFFFFFF00000000)) == 0) { n += 32; val <<= 32; }
+	if ((val & UINT64_C(0xFFFF000000000000)) == 0) { n += 16; val <<= 16; }
+	if ((val & UINT64_C(0xFF00000000000000)) == 0) { n += 8;  val <<= 8;  }
+	if ((val & UINT64_C(0xF000000000000000)) == 0) { n += 4;  val <<= 4;  }
+	if ((val & UINT64_C(0xC000000000000000)) == 0) { n += 2;  val <<= 2;  }
+	if ((val & UINT64_C(0x8000000000000000)) == 0) { n += 1;  val <<= 1;  }
+	return n;
+#endif
+}
+
+static inline int uint128_clz(uint128 val)
+{
+	if (val.high != 0) {
+		return uint64_clz(val.high);
+	}
+	return 64 + uint64_clz(val.low);
+}
+
+static inline uint128 uint128_divmod(uint128 lhs, uint128 rhs, uint128 *rem)
+{
+	if (uint128_eq(rhs, UINT128_C(0))) {
+		if (rem) {
+			*rem = UINT128_C(0);
+		}
+		return UINT128_MAX;
+	}
+
 	if (uint128_greater(rhs, lhs)) {
+		if (rem) {
+			*rem = lhs;
+		}
 		return UINT128_C(0);
 	}
 
 	if (uint128_eq(lhs, rhs)) {
+		if (rem) {
+			*rem = UINT128_C(0);
+		}
 		return UINT128_C(1);
 	}
 
-	uint128 current = UINT128_C(1);
-	uint128 result = UINT128_C(0);
-	uint128 divisor = rhs;
-	while (uint128_less_eq(divisor, lhs)) {
-		divisor = uint128_shiftl(divisor, 1);
-		current = uint128_shiftl(current, 1);
-	}
+	int lhs_clz = uint128_clz(lhs);
+	int rhs_clz = uint128_clz(rhs);
+	int shift = rhs_clz - lhs_clz;
 
-	divisor = uint128_shiftr(divisor, 1);
-	current = uint128_shiftr(current, 1);
+	uint128 divisor = uint128_wrapping_shl(rhs, shift);
+	uint128 quotient = UINT128_C(0);
 
-	while (!uint128_eq(current, UINT128_C(0))) {
+	for (int i = 0; i <= shift; i++) {
+		quotient = uint128_wrapping_shl(quotient, 1);
 		if (uint128_greater_eq(lhs, divisor)) {
-			lhs = uint128_sub(lhs, divisor);
-			result = uint128_or(result, current);
+			lhs = uint128_wrapping_sub(lhs, divisor);
+			quotient.low |= 1;
 		}
-
-		current = uint128_shiftr(current, 1);
-		divisor = uint128_shiftr(divisor, 1);
+		divisor = uint128_wrapping_shr(divisor, 1);
 	}
 
-	return result;
-}
-
-// Returns lhs % rhs.
-static inline uint128 uint128_rem(uint128 lhs, uint128 rhs)
-{
-	// Based on the algorithm described here:
-	// https://stackoverflow.com/questions/5386377/division-without-using
-	if (uint128_greater(rhs, lhs)) {
-		return lhs;
+	if (rem) {
+		*rem = lhs;
 	}
-
-	if (uint128_eq(lhs, rhs)) {
-		return UINT128_C(0);
-	}
-
-	uint128 current = UINT128_C(1);
-	uint128 result = UINT128_C(0);
-	uint128 divisor = rhs;
-	while (uint128_less_eq(divisor, lhs)) {
-		divisor = uint128_shiftl(divisor, 1);
-		current = uint128_shiftl(current, 1);
-	}
-
-	divisor = uint128_shiftr(divisor, 1);
-	current = uint128_shiftr(current, 1);
-
-	while (!uint128_eq(current, UINT128_C(0))) {
-		if (uint128_greater_eq(lhs, divisor)) {
-			lhs = uint128_sub(lhs, divisor);
-			result = uint128_or(result, current);
-		}
-
-		current = uint128_shiftr(current, 1);
-		divisor = uint128_shiftr(divisor, 1);
-	}
-
-	return lhs;
+	return quotient;
 }
 
 // Returns lhs / rhs.
-static inline int128 int128_div(int128 lhs, int128 rhs)
+static inline uint128 uint128_wrapping_div(uint128 lhs, uint128 rhs)
+{
+	return uint128_divmod(lhs, rhs, NULL);
+}
+
+// Returns lhs % rhs.
+static inline uint128 uint128_wrapping_rem(uint128 lhs, uint128 rhs)
+{
+	uint128 rem;
+	uint128_divmod(lhs, rhs, &rem);
+	return rem;
+}
+
+// Returns lhs / rhs.
+static inline int128 int128_wrapping_div(int128 lhs, int128 rhs)
 {
 	// signed integers aren't symmetric. INT128_MIN == (-INT128_MAX) - 1
 	if (int128_eq(lhs, rhs) && int128_eq(lhs, INT128_MIN)) {
@@ -548,28 +494,28 @@ static inline int128 int128_div(int128 lhs, int128 rhs)
 	bool result_negative = false;
 	if (int128_less(lhs, INT128_C(0))) {
 		result_negative = !result_negative;
-		lhs = int128_neg(lhs);
+		lhs = int128_wrapping_neg(lhs);
 	}
 
 	if (int128_less(rhs, INT128_C(0))) {
 		result_negative = !result_negative;
-		rhs = int128_neg(rhs);
+		rhs = int128_wrapping_neg(rhs);
 	}
 
 	uint128 a = { .low = lhs.low, .high = lhs.high };
 	uint128 b = { .low = rhs.low, .high = rhs.high };
-	uint128 c = uint128_div(a, b);
+	uint128 c = uint128_wrapping_div(a, b);
 	int128 result = { .low = c.low, .high = c.high };
 
 	if (result_negative) {
-		return int128_neg(result);
+		return int128_wrapping_neg(result);
 	}
 
 	return result;
 }
 
 // Returns lhs % rhs.
-static inline int128 int128_rem(int128 lhs, int128 rhs)
+static inline int128 int128_wrapping_rem(int128 lhs, int128 rhs)
 {
 	// signed integers aren't symmetric. INT128_MIN == (-INT128_MAX) - 1
 	if (int128_eq(lhs, INT128_MIN)) {
@@ -583,23 +529,188 @@ static inline int128 int128_rem(int128 lhs, int128 rhs)
 	bool result_negative = false;
 	if (int128_less(lhs, INT128_C(0))) {
 		result_negative = true;
-		lhs = int128_neg(lhs);
+		lhs = int128_wrapping_neg(lhs);
 	}
 
 	if (int128_less(rhs, INT128_C(0))) {
-		rhs = int128_neg(rhs);
+		rhs = int128_wrapping_neg(rhs);
 	}
 
 	uint128 a = { .low = lhs.low, .high = lhs.high };
 	uint128 b = { .low = rhs.low, .high = rhs.high };
-	uint128 c = uint128_rem(a, b);
+	uint128 c = uint128_wrapping_rem(a, b);
 	int128 result = { .low = c.low, .high = c.high };
 
 	if (result_negative && int128_greater(result, INT128_C(0))) {
-		return int128_neg(result);
+		return int128_wrapping_neg(result);
 	}
 
 	return result;
 }
+
+// --- C11 and C++ generic APIs ---
+
+#ifdef __cplusplus
+// C++ overloaded conversions
+inline int128 to_int128(int128 x) { return x; }
+inline int128 to_int128(uint128 x) { return (int128){ .low = x.low, .high = x.high }; }
+
+template <typename T>
+inline typename std::enable_if<std::is_integral<T>::value && std::is_signed<T>::value, int128>::type
+to_int128(T x) {
+	int64_t val = (int64_t)x;
+	return (val < 0) ? (int128){ .low = (uint64_t)val, .high = UINT64_MAX } : (int128){ .low = (uint64_t)val, .high = 0 };
+}
+
+template <typename T>
+inline typename std::enable_if<std::is_integral<T>::value && !std::is_signed<T>::value, int128>::type
+to_int128(T x) {
+	return (int128){ .low = (uint64_t)x, .high = 0 };
+}
+
+inline uint128 to_uint128(uint128 x) { return x; }
+inline uint128 to_uint128(int128 x) { return (uint128){ .low = x.low, .high = x.high }; }
+
+template <typename T>
+inline typename std::enable_if<std::is_integral<T>::value && std::is_signed<T>::value, uint128>::type
+to_uint128(T x) {
+	int64_t val = (int64_t)x;
+	return (val < 0) ? (uint128){ .low = (uint64_t)val, .high = UINT64_MAX } : (uint128){ .low = (uint64_t)val, .high = 0 };
+}
+
+template <typename T>
+inline typename std::enable_if<std::is_integral<T>::value && !std::is_signed<T>::value, uint128>::type
+to_uint128(T x) {
+	return (uint128){ .low = (uint64_t)x, .high = 0 };
+}
+
+// C++ overloaded wrapping operations
+template <typename T>
+inline int128 wrapping_add(int128 lhs, T rhs) { return int128_wrapping_add(lhs, to_int128(rhs)); }
+template <typename T>
+inline uint128 wrapping_add(uint128 lhs, T rhs) { return uint128_wrapping_add(lhs, to_uint128(rhs)); }
+
+template <typename T>
+inline int128 wrapping_sub(int128 lhs, T rhs) { return int128_wrapping_sub(lhs, to_int128(rhs)); }
+template <typename T>
+inline uint128 wrapping_sub(uint128 lhs, T rhs) { return uint128_wrapping_sub(lhs, to_uint128(rhs)); }
+
+template <typename T>
+inline int128 wrapping_mul(int128 lhs, T rhs) { return int128_wrapping_mul(lhs, to_int128(rhs)); }
+template <typename T>
+inline uint128 wrapping_mul(uint128 lhs, T rhs) { return uint128_wrapping_mul(lhs, to_uint128(rhs)); }
+
+template <typename T>
+inline int128 wrapping_div(int128 lhs, T rhs) { return int128_wrapping_div(lhs, to_int128(rhs)); }
+template <typename T>
+inline uint128 wrapping_div(uint128 lhs, T rhs) { return uint128_wrapping_div(lhs, to_uint128(rhs)); }
+
+template <typename T>
+inline int128 wrapping_rem(int128 lhs, T rhs) { return int128_wrapping_rem(lhs, to_int128(rhs)); }
+template <typename T>
+inline uint128 wrapping_rem(uint128 lhs, T rhs) { return uint128_wrapping_rem(lhs, to_uint128(rhs)); }
+
+inline int128 wrapping_neg(int128 x) { return int128_wrapping_neg(x); }
+inline uint128 wrapping_neg(uint128 x) { return uint128_wrapping_neg(x); }
+
+inline int128 wrapping_shl(int128 lhs, int rhs) { return int128_wrapping_shl(lhs, rhs); }
+inline uint128 wrapping_shl(uint128 lhs, int rhs) { return uint128_wrapping_shl(lhs, rhs); }
+
+inline int128 wrapping_shr(int128 lhs, int rhs) { return int128_wrapping_shr(lhs, rhs); }
+inline uint128 wrapping_shr(uint128 lhs, int rhs) { return uint128_wrapping_shr(lhs, rhs); }
+
+#else // C11 generic implementations
+
+static inline int128 to_int128_impl(int128 x) { return x; }
+static inline int128 to_int128_uint128(uint128 x) { return (int128){ .low = x.low, .high = x.high }; }
+static inline int128 to_int128_signed(int64_t x) {
+	return (x < 0) ? (int128){ .low = (uint64_t)x, .high = UINT64_MAX } : (int128){ .low = (uint64_t)x, .high = 0 };
+}
+static inline int128 to_int128_unsigned(uint64_t x) {
+	return (int128){ .low = x, .high = 0 };
+}
+
+#define to_int128(x) _Generic((x), \
+	int128: to_int128_impl, \
+	uint128: to_int128_uint128, \
+	char: to_int128_signed, \
+	signed char: to_int128_signed, \
+	short: to_int128_signed, \
+	int: to_int128_signed, \
+	long: to_int128_signed, \
+	long long: to_int128_signed, \
+	unsigned char: to_int128_unsigned, \
+	unsigned short: to_int128_unsigned, \
+	unsigned int: to_int128_unsigned, \
+	unsigned long: to_int128_unsigned, \
+	unsigned long long: to_int128_unsigned \
+)(x)
+
+static inline uint128 to_uint128_impl(uint128 x) { return x; }
+static inline uint128 to_uint128_int128(int128 x) { return (uint128){ .low = x.low, .high = x.high }; }
+static inline uint128 to_uint128_signed(int64_t x) {
+	return (x < 0) ? (uint128){ .low = (uint64_t)x, .high = UINT64_MAX } : (uint128){ .low = (uint64_t)x, .high = 0 };
+}
+static inline uint128 to_uint128_unsigned(uint64_t x) {
+	return (uint128){ .low = x, .high = 0 };
+}
+
+#define to_uint128(x) _Generic((x), \
+	uint128: to_uint128_impl, \
+	int128: to_uint128_int128, \
+	char: to_uint128_signed, \
+	signed char: to_uint128_signed, \
+	short: to_uint128_signed, \
+	int: to_uint128_signed, \
+	long: to_uint128_signed, \
+	long long: to_uint128_signed, \
+	unsigned char: to_uint128_unsigned, \
+	unsigned short: to_uint128_unsigned, \
+	unsigned int: to_uint128_unsigned, \
+	unsigned long: to_uint128_unsigned, \
+	unsigned long long: to_uint128_unsigned \
+)(x)
+
+#define wrapping_add(lhs, rhs) _Generic((lhs), \
+	int128: int128_wrapping_add(to_int128(lhs), to_int128(rhs)), \
+	uint128: uint128_wrapping_add(to_uint128(lhs), to_uint128(rhs)) \
+)
+
+#define wrapping_sub(lhs, rhs) _Generic((lhs), \
+	int128: int128_wrapping_sub(to_int128(lhs), to_int128(rhs)), \
+	uint128: uint128_wrapping_sub(to_uint128(lhs), to_uint128(rhs)) \
+)
+
+#define wrapping_mul(lhs, rhs) _Generic((lhs), \
+	int128: int128_wrapping_mul(to_int128(lhs), to_int128(rhs)), \
+	uint128: uint128_wrapping_mul(to_uint128(lhs), to_uint128(rhs)) \
+)
+
+#define wrapping_div(lhs, rhs) _Generic((lhs), \
+	int128: int128_wrapping_div(to_int128(lhs), to_int128(rhs)), \
+	uint128: uint128_wrapping_div(to_uint128(lhs), to_uint128(rhs)) \
+)
+
+#define wrapping_rem(lhs, rhs) _Generic((lhs), \
+	int128: int128_wrapping_rem(to_int128(lhs), to_int128(rhs)), \
+	uint128: uint128_wrapping_rem(to_uint128(lhs), to_uint128(rhs)) \
+)
+
+#define wrapping_neg(x) _Generic((x), \
+	int128: int128_wrapping_neg(to_int128(x)), \
+	uint128: uint128_wrapping_neg(to_uint128(x)) \
+)
+
+#define wrapping_shl(lhs, rhs) _Generic((lhs), \
+	int128: int128_wrapping_shl(to_int128(lhs), (rhs)), \
+	uint128: uint128_wrapping_shl(to_uint128(lhs), (rhs)) \
+)
+
+#define wrapping_shr(lhs, rhs) _Generic((lhs), \
+	int128: int128_wrapping_shr(to_int128(lhs), (rhs)), \
+	uint128: uint128_wrapping_shr(to_uint128(lhs), (rhs)) \
+)
+
+#endif
 
 #endif // INT128_H

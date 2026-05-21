@@ -2,7 +2,8 @@ compile_commands.json
 test.o
 test.exe
 test.obj
-test
+test_c
+test_cpp
 coverage-html
 *.gcov
 *.gcda
