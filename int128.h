@@ -1,5 +1,6 @@
 #ifndef INT128_H
 #define INT128_H
+#include <stddef.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -14,7 +15,7 @@
 #define UINT128_MAX ((uint128){ .low = UINT64_MAX, .high = UINT64_MAX })
 
 #define UINT128_C(x) ((uint128){ .low = (uint64_t)(x), .high = 0 })
-#define INT128_C(x)                                                 \
+#define INT128_C(x)                                                         \
 	(((x) < 0) ? (int128){ .low = (uint64_t)(x), .high = UINT64_MAX } : \
 		     (int128){ .low = (uint64_t)(x), .high = 0 })
 
@@ -397,17 +398,37 @@ static inline int128 int128_wrapping_mul(int128 lhs, int128 rhs)
 static inline int uint64_clz(uint64_t val)
 {
 #if defined(__GNUC__) || defined(__clang__)
-	if (val == 0) return 64;
+	if (val == 0)
+		return 64;
 	return __builtin_clzll(val);
 #else
-	if (val == 0) return 64;
+	if (val == 0)
+		return 64;
 	int n = 0;
-	if ((val & UINT64_C(0xFFFFFFFF00000000)) == 0) { n += 32; val <<= 32; }
-	if ((val & UINT64_C(0xFFFF000000000000)) == 0) { n += 16; val <<= 16; }
-	if ((val & UINT64_C(0xFF00000000000000)) == 0) { n += 8;  val <<= 8;  }
-	if ((val & UINT64_C(0xF000000000000000)) == 0) { n += 4;  val <<= 4;  }
-	if ((val & UINT64_C(0xC000000000000000)) == 0) { n += 2;  val <<= 2;  }
-	if ((val & UINT64_C(0x8000000000000000)) == 0) { n += 1;  val <<= 1;  }
+	if ((val & UINT64_C(0xFFFFFFFF00000000)) == 0) {
+		n += 32;
+		val <<= 32;
+	}
+	if ((val & UINT64_C(0xFFFF000000000000)) == 0) {
+		n += 16;
+		val <<= 16;
+	}
+	if ((val & UINT64_C(0xFF00000000000000)) == 0) {
+		n += 8;
+		val <<= 8;
+	}
+	if ((val & UINT64_C(0xF000000000000000)) == 0) {
+		n += 4;
+		val <<= 4;
+	}
+	if ((val & UINT64_C(0xC000000000000000)) == 0) {
+		n += 2;
+		val <<= 2;
+	}
+	if ((val & UINT64_C(0x8000000000000000)) == 0) {
+		n += 1;
+		val <<= 1;
+	}
 	return n;
 #endif
 }
@@ -552,164 +573,249 @@ static inline int128 int128_wrapping_rem(int128 lhs, int128 rhs)
 
 #ifdef __cplusplus
 // C++ overloaded conversions
-inline int128 to_int128(int128 x) { return x; }
-inline int128 to_int128(uint128 x) { return (int128){ .low = x.low, .high = x.high }; }
-
-template <typename T>
-inline typename std::enable_if<std::is_integral<T>::value && std::is_signed<T>::value, int128>::type
-to_int128(T x) {
-	int64_t val = (int64_t)x;
-	return (val < 0) ? (int128){ .low = (uint64_t)val, .high = UINT64_MAX } : (int128){ .low = (uint64_t)val, .high = 0 };
+inline int128 to_int128(int128 x)
+{
+	return x;
+}
+inline int128 to_int128(uint128 x)
+{
+	return (int128){ .low = x.low, .high = x.high };
 }
 
 template <typename T>
-inline typename std::enable_if<std::is_integral<T>::value && !std::is_signed<T>::value, int128>::type
-to_int128(T x) {
+inline typename std::enable_if<
+	std::is_integral<T>::value && std::is_signed<T>::value, int128>::type
+to_int128(T x)
+{
+	int64_t val = (int64_t)x;
+	return (val < 0) ?
+		       (int128){ .low = (uint64_t)val, .high = UINT64_MAX } :
+		       (int128){ .low = (uint64_t)val, .high = 0 };
+}
+
+template <typename T>
+inline typename std::enable_if<
+	std::is_integral<T>::value && !std::is_signed<T>::value, int128>::type
+to_int128(T x)
+{
 	return (int128){ .low = (uint64_t)x, .high = 0 };
 }
 
-inline uint128 to_uint128(uint128 x) { return x; }
-inline uint128 to_uint128(int128 x) { return (uint128){ .low = x.low, .high = x.high }; }
-
-template <typename T>
-inline typename std::enable_if<std::is_integral<T>::value && std::is_signed<T>::value, uint128>::type
-to_uint128(T x) {
-	int64_t val = (int64_t)x;
-	return (val < 0) ? (uint128){ .low = (uint64_t)val, .high = UINT64_MAX } : (uint128){ .low = (uint64_t)val, .high = 0 };
+inline uint128 to_uint128(uint128 x)
+{
+	return x;
+}
+inline uint128 to_uint128(int128 x)
+{
+	return (uint128){ .low = x.low, .high = x.high };
 }
 
 template <typename T>
-inline typename std::enable_if<std::is_integral<T>::value && !std::is_signed<T>::value, uint128>::type
-to_uint128(T x) {
+inline typename std::enable_if<
+	std::is_integral<T>::value && std::is_signed<T>::value, uint128>::type
+to_uint128(T x)
+{
+	int64_t val = (int64_t)x;
+	return (val < 0) ?
+		       (uint128){ .low = (uint64_t)val, .high = UINT64_MAX } :
+		       (uint128){ .low = (uint64_t)val, .high = 0 };
+}
+
+template <typename T>
+inline typename std::enable_if<
+	std::is_integral<T>::value && !std::is_signed<T>::value, uint128>::type
+to_uint128(T x)
+{
 	return (uint128){ .low = (uint64_t)x, .high = 0 };
 }
 
 // C++ overloaded wrapping operations
-template <typename T>
-inline int128 wrapping_add(int128 lhs, T rhs) { return int128_wrapping_add(lhs, to_int128(rhs)); }
-template <typename T>
-inline uint128 wrapping_add(uint128 lhs, T rhs) { return uint128_wrapping_add(lhs, to_uint128(rhs)); }
+template <typename T> inline int128 wrapping_add(int128 lhs, T rhs)
+{
+	return int128_wrapping_add(lhs, to_int128(rhs));
+}
+template <typename T> inline uint128 wrapping_add(uint128 lhs, T rhs)
+{
+	return uint128_wrapping_add(lhs, to_uint128(rhs));
+}
 
-template <typename T>
-inline int128 wrapping_sub(int128 lhs, T rhs) { return int128_wrapping_sub(lhs, to_int128(rhs)); }
-template <typename T>
-inline uint128 wrapping_sub(uint128 lhs, T rhs) { return uint128_wrapping_sub(lhs, to_uint128(rhs)); }
+template <typename T> inline int128 wrapping_sub(int128 lhs, T rhs)
+{
+	return int128_wrapping_sub(lhs, to_int128(rhs));
+}
+template <typename T> inline uint128 wrapping_sub(uint128 lhs, T rhs)
+{
+	return uint128_wrapping_sub(lhs, to_uint128(rhs));
+}
 
-template <typename T>
-inline int128 wrapping_mul(int128 lhs, T rhs) { return int128_wrapping_mul(lhs, to_int128(rhs)); }
-template <typename T>
-inline uint128 wrapping_mul(uint128 lhs, T rhs) { return uint128_wrapping_mul(lhs, to_uint128(rhs)); }
+template <typename T> inline int128 wrapping_mul(int128 lhs, T rhs)
+{
+	return int128_wrapping_mul(lhs, to_int128(rhs));
+}
+template <typename T> inline uint128 wrapping_mul(uint128 lhs, T rhs)
+{
+	return uint128_wrapping_mul(lhs, to_uint128(rhs));
+}
 
-template <typename T>
-inline int128 wrapping_div(int128 lhs, T rhs) { return int128_wrapping_div(lhs, to_int128(rhs)); }
-template <typename T>
-inline uint128 wrapping_div(uint128 lhs, T rhs) { return uint128_wrapping_div(lhs, to_uint128(rhs)); }
+template <typename T> inline int128 wrapping_div(int128 lhs, T rhs)
+{
+	return int128_wrapping_div(lhs, to_int128(rhs));
+}
+template <typename T> inline uint128 wrapping_div(uint128 lhs, T rhs)
+{
+	return uint128_wrapping_div(lhs, to_uint128(rhs));
+}
 
-template <typename T>
-inline int128 wrapping_rem(int128 lhs, T rhs) { return int128_wrapping_rem(lhs, to_int128(rhs)); }
-template <typename T>
-inline uint128 wrapping_rem(uint128 lhs, T rhs) { return uint128_wrapping_rem(lhs, to_uint128(rhs)); }
+template <typename T> inline int128 wrapping_rem(int128 lhs, T rhs)
+{
+	return int128_wrapping_rem(lhs, to_int128(rhs));
+}
+template <typename T> inline uint128 wrapping_rem(uint128 lhs, T rhs)
+{
+	return uint128_wrapping_rem(lhs, to_uint128(rhs));
+}
 
-inline int128 wrapping_neg(int128 x) { return int128_wrapping_neg(x); }
-inline uint128 wrapping_neg(uint128 x) { return uint128_wrapping_neg(x); }
+inline int128 wrapping_neg(int128 x)
+{
+	return int128_wrapping_neg(x);
+}
+inline uint128 wrapping_neg(uint128 x)
+{
+	return uint128_wrapping_neg(x);
+}
 
-inline int128 wrapping_shl(int128 lhs, int rhs) { return int128_wrapping_shl(lhs, rhs); }
-inline uint128 wrapping_shl(uint128 lhs, int rhs) { return uint128_wrapping_shl(lhs, rhs); }
+inline int128 wrapping_shl(int128 lhs, int rhs)
+{
+	return int128_wrapping_shl(lhs, rhs);
+}
+inline uint128 wrapping_shl(uint128 lhs, int rhs)
+{
+	return uint128_wrapping_shl(lhs, rhs);
+}
 
-inline int128 wrapping_shr(int128 lhs, int rhs) { return int128_wrapping_shr(lhs, rhs); }
-inline uint128 wrapping_shr(uint128 lhs, int rhs) { return uint128_wrapping_shr(lhs, rhs); }
+inline int128 wrapping_shr(int128 lhs, int rhs)
+{
+	return int128_wrapping_shr(lhs, rhs);
+}
+inline uint128 wrapping_shr(uint128 lhs, int rhs)
+{
+	return uint128_wrapping_shr(lhs, rhs);
+}
 
 #else // C11 generic implementations
 
-static inline int128 to_int128_impl(int128 x) { return x; }
-static inline int128 to_int128_uint128(uint128 x) { return (int128){ .low = x.low, .high = x.high }; }
-static inline int128 to_int128_signed(int64_t x) {
-	return (x < 0) ? (int128){ .low = (uint64_t)x, .high = UINT64_MAX } : (int128){ .low = (uint64_t)x, .high = 0 };
+static inline int128 to_int128_impl(int128 x)
+{
+	return x;
 }
-static inline int128 to_int128_unsigned(uint64_t x) {
+static inline int128 to_int128_uint128(uint128 x)
+{
+	return (int128){ .low = x.low, .high = x.high };
+}
+static inline int128 to_int128_signed(int64_t x)
+{
+	return (x < 0) ? (int128){ .low = (uint64_t)x, .high = UINT64_MAX } :
+			 (int128){ .low = (uint64_t)x, .high = 0 };
+}
+static inline int128 to_int128_unsigned(uint64_t x)
+{
 	return (int128){ .low = x, .high = 0 };
 }
 
-#define to_int128(x) _Generic((x), \
-	int128: to_int128_impl, \
-	uint128: to_int128_uint128, \
-	char: to_int128_signed, \
-	signed char: to_int128_signed, \
-	short: to_int128_signed, \
-	int: to_int128_signed, \
-	long: to_int128_signed, \
-	long long: to_int128_signed, \
-	unsigned char: to_int128_unsigned, \
-	unsigned short: to_int128_unsigned, \
-	unsigned int: to_int128_unsigned, \
-	unsigned long: to_int128_unsigned, \
-	unsigned long long: to_int128_unsigned \
-)(x)
+#define to_int128(x)                                \
+	_Generic((x),                               \
+		int128: to_int128_impl,             \
+		uint128: to_int128_uint128,         \
+		char: to_int128_signed,             \
+		signed char: to_int128_signed,      \
+		short: to_int128_signed,            \
+		int: to_int128_signed,              \
+		long: to_int128_signed,             \
+		long long: to_int128_signed,        \
+		unsigned char: to_int128_unsigned,  \
+		unsigned short: to_int128_unsigned, \
+		unsigned int: to_int128_unsigned,   \
+		unsigned long: to_int128_unsigned,  \
+		unsigned long long: to_int128_unsigned)(x)
 
-static inline uint128 to_uint128_impl(uint128 x) { return x; }
-static inline uint128 to_uint128_int128(int128 x) { return (uint128){ .low = x.low, .high = x.high }; }
-static inline uint128 to_uint128_signed(int64_t x) {
-	return (x < 0) ? (uint128){ .low = (uint64_t)x, .high = UINT64_MAX } : (uint128){ .low = (uint64_t)x, .high = 0 };
+static inline uint128 to_uint128_impl(uint128 x)
+{
+	return x;
 }
-static inline uint128 to_uint128_unsigned(uint64_t x) {
+static inline uint128 to_uint128_int128(int128 x)
+{
+	return (uint128){ .low = x.low, .high = x.high };
+}
+static inline uint128 to_uint128_signed(int64_t x)
+{
+	return (x < 0) ? (uint128){ .low = (uint64_t)x, .high = UINT64_MAX } :
+			 (uint128){ .low = (uint64_t)x, .high = 0 };
+}
+static inline uint128 to_uint128_unsigned(uint64_t x)
+{
 	return (uint128){ .low = x, .high = 0 };
 }
 
-#define to_uint128(x) _Generic((x), \
-	uint128: to_uint128_impl, \
-	int128: to_uint128_int128, \
-	char: to_uint128_signed, \
-	signed char: to_uint128_signed, \
-	short: to_uint128_signed, \
-	int: to_uint128_signed, \
-	long: to_uint128_signed, \
-	long long: to_uint128_signed, \
-	unsigned char: to_uint128_unsigned, \
-	unsigned short: to_uint128_unsigned, \
-	unsigned int: to_uint128_unsigned, \
-	unsigned long: to_uint128_unsigned, \
-	unsigned long long: to_uint128_unsigned \
-)(x)
+#define to_uint128(x)                                \
+	_Generic((x),                                \
+		uint128: to_uint128_impl,            \
+		int128: to_uint128_int128,           \
+		char: to_uint128_signed,             \
+		signed char: to_uint128_signed,      \
+		short: to_uint128_signed,            \
+		int: to_uint128_signed,              \
+		long: to_uint128_signed,             \
+		long long: to_uint128_signed,        \
+		unsigned char: to_uint128_unsigned,  \
+		unsigned short: to_uint128_unsigned, \
+		unsigned int: to_uint128_unsigned,   \
+		unsigned long: to_uint128_unsigned,  \
+		unsigned long long: to_uint128_unsigned)(x)
 
-#define wrapping_add(lhs, rhs) _Generic((lhs), \
-	int128: int128_wrapping_add(to_int128(lhs), to_int128(rhs)), \
-	uint128: uint128_wrapping_add(to_uint128(lhs), to_uint128(rhs)) \
-)
+#define wrapping_add(lhs, rhs)                                               \
+	_Generic((lhs),                                                      \
+		int128: int128_wrapping_add(to_int128(lhs), to_int128(rhs)), \
+		uint128: uint128_wrapping_add(to_uint128(lhs),               \
+					      to_uint128(rhs)))
 
-#define wrapping_sub(lhs, rhs) _Generic((lhs), \
-	int128: int128_wrapping_sub(to_int128(lhs), to_int128(rhs)), \
-	uint128: uint128_wrapping_sub(to_uint128(lhs), to_uint128(rhs)) \
-)
+#define wrapping_sub(lhs, rhs)                                               \
+	_Generic((lhs),                                                      \
+		int128: int128_wrapping_sub(to_int128(lhs), to_int128(rhs)), \
+		uint128: uint128_wrapping_sub(to_uint128(lhs),               \
+					      to_uint128(rhs)))
 
-#define wrapping_mul(lhs, rhs) _Generic((lhs), \
-	int128: int128_wrapping_mul(to_int128(lhs), to_int128(rhs)), \
-	uint128: uint128_wrapping_mul(to_uint128(lhs), to_uint128(rhs)) \
-)
+#define wrapping_mul(lhs, rhs)                                               \
+	_Generic((lhs),                                                      \
+		int128: int128_wrapping_mul(to_int128(lhs), to_int128(rhs)), \
+		uint128: uint128_wrapping_mul(to_uint128(lhs),               \
+					      to_uint128(rhs)))
 
-#define wrapping_div(lhs, rhs) _Generic((lhs), \
-	int128: int128_wrapping_div(to_int128(lhs), to_int128(rhs)), \
-	uint128: uint128_wrapping_div(to_uint128(lhs), to_uint128(rhs)) \
-)
+#define wrapping_div(lhs, rhs)                                               \
+	_Generic((lhs),                                                      \
+		int128: int128_wrapping_div(to_int128(lhs), to_int128(rhs)), \
+		uint128: uint128_wrapping_div(to_uint128(lhs),               \
+					      to_uint128(rhs)))
 
-#define wrapping_rem(lhs, rhs) _Generic((lhs), \
-	int128: int128_wrapping_rem(to_int128(lhs), to_int128(rhs)), \
-	uint128: uint128_wrapping_rem(to_uint128(lhs), to_uint128(rhs)) \
-)
+#define wrapping_rem(lhs, rhs)                                               \
+	_Generic((lhs),                                                      \
+		int128: int128_wrapping_rem(to_int128(lhs), to_int128(rhs)), \
+		uint128: uint128_wrapping_rem(to_uint128(lhs),               \
+					      to_uint128(rhs)))
 
-#define wrapping_neg(x) _Generic((x), \
-	int128: int128_wrapping_neg(to_int128(x)), \
-	uint128: uint128_wrapping_neg(to_uint128(x)) \
-)
+#define wrapping_neg(x)                                    \
+	_Generic((x),                                      \
+		int128: int128_wrapping_neg(to_int128(x)), \
+		uint128: uint128_wrapping_neg(to_uint128(x)))
 
-#define wrapping_shl(lhs, rhs) _Generic((lhs), \
-	int128: int128_wrapping_shl(to_int128(lhs), (rhs)), \
-	uint128: uint128_wrapping_shl(to_uint128(lhs), (rhs)) \
-)
+#define wrapping_shl(lhs, rhs)                                      \
+	_Generic((lhs),                                             \
+		int128: int128_wrapping_shl(to_int128(lhs), (rhs)), \
+		uint128: uint128_wrapping_shl(to_uint128(lhs), (rhs)))
 
-#define wrapping_shr(lhs, rhs) _Generic((lhs), \
-	int128: int128_wrapping_shr(to_int128(lhs), (rhs)), \
-	uint128: uint128_wrapping_shr(to_uint128(lhs), (rhs)) \
-)
+#define wrapping_shr(lhs, rhs)                                      \
+	_Generic((lhs),                                             \
+		int128: int128_wrapping_shr(to_int128(lhs), (rhs)), \
+		uint128: uint128_wrapping_shr(to_uint128(lhs), (rhs)))
 
 #endif
 
